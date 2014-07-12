@@ -2,6 +2,7 @@
 
 require "optparse"
 require "pp"
+require "pry"
 
 require "rubygems"
 
@@ -70,6 +71,15 @@ class RetsCli
       opts.separator ""
       opts.separator "Misc options:"
 
+      opts.on("-l", "--[no-]lookup", "When set, lookup metadata values and resolve.") do |resolve|
+        # -r was taken
+        options[:resolve] = resolve
+      end
+
+      opts.on("-x", "--[no-]xml", "Only return the raw XML. Do not parse") do |xml|
+        options[:xml] = xml
+      end
+
       opts.on_tail("-v", "--verbose", "Be verbose.") do |verbose|
         logger = Class.new do
           def method_missing(method, *a, &b)
@@ -122,32 +132,34 @@ case options[:action]
 
 
       # All types except system
-      types = Rets::METADATA_TYPES.map { |t| t.downcase.to_sym } - [:system]
+      types = Rets::Metadata::METADATA_TYPES.map { |t| t.downcase.to_sym } - [:system]
 
       types.each do |type|
         # if RowContainer ...
-        rows = metadata[type]
+        containers = metadata.metadata_types[type]
 
         puts type.to_s.capitalize
         puts "="*40
 
-        print_key_value = lambda do |k,v|
+        print_key_value = proc do |k,v|
           key   = "#{k}:".ljust(35)
           value = "#{v}".ljust(35)
 
           puts [key, value].join
         end
 
-        rows.each do |row|
-          top, rest = row.partition { |k,v| preferred_fields.include?(k) }
+        containers.each do |container|
+          container.rows.each do |row|
+            top, rest = row.partition { |k,v| preferred_fields.include?(k) }
 
-          top.each(&print_key_value)
+            Hash[top].each(&print_key_value)
 
-          rest.sort_by{|k,v|k}.each(&print_key_value) if options[:metadata_format] == "long"
+            Hash[rest].sort_by{|k,v|k}.each(&print_key_value) if options[:metadata_format] == "long"
 
+            puts
+          end
           puts
         end
-
         puts
       end
 
@@ -157,12 +169,16 @@ case options[:action]
     end
 
   when "search" then
-    pp client.find(:all,
+    metadata = client.metadata if options[:resolve]
+    results = client.find(:all,
                   :search_type => options[:resource],
                   :class       => options[:class],
                   :query       => query,
                   :count       => Rets::Client::COUNT.exclude,
-                  :limit       => options[:limit])
+                  :limit       => options[:limit],
+                  :resolve => options[:resolve],
+                  :xml => options[:xml])
+    pp results
 
   when "count" then
     pp client.find(:all,
@@ -189,10 +205,9 @@ case options[:action]
 
     parts = client.all_objects(
       :resource    => "Property",
-      :resource_id => 90020062739, # id from KeyField for a given property
+      :resource_id =>14706305, # 90020062739, # id from KeyField for a given property
       :object_type => "Photo"
     )
-
     parts.each { |pt| p pt.headers }
 
     write_objects(parts)

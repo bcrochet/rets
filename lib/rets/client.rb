@@ -94,6 +94,7 @@ module Rets
     # <tt>:limit</tt>::        The number of records to request from the server.
     # <tt>:resolve</tt>::      Provide resolved values that use metadata instead
     #                          of raw system values.
+    # <tt>:xml</tt>::         Just return the xml. Do not parse it.
     #
     # Any other keys are converted to the RETS query format, and passed
     # to the server as part of the query. For instance, the key <tt>:offset</tt>
@@ -128,16 +129,18 @@ module Rets
     end
 
     def find_every(opts, resolve)
+      xml = opts.delete(:xml)
       params = {"QueryType" => "DMQL2", "Format" => "COMPACT"}.merge(fixup_keys(opts))
       res = http_post(capability_url("Search"), params)
 
       if opts[:count] == COUNT.only
         Parser::Compact.get_count(res.body)
       else
-        results = Parser::Compact.parse_document(res.body.encode("UTF-8", "binary", :invalid => :replace, :undef => :replace))
-        if resolve
-          rets_class = find_rets_class(opts[:search_type], opts[:class])
-          decorate_results(results, rets_class)
+        results = res.body.encode("UTF-8", "binary", :invalid => :replace, :undef => :replace)
+        results = Parser::Compact.parse_document(results) unless xml
+        if resolve and not xml
+            rets_class = find_rets_class(opts[:search_type], opts[:class])
+            decorate_results(results, rets_class)
         else
           results
         end
